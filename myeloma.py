@@ -2,6 +2,12 @@ import numpy as np
 import pandas as pd
 import xgboost as xgb
 from sklearn.model_selection import train_test_split
+from sklearn.experimental import enable_iterative_imputer
+from sklearn.impute import IterativeImputer, KNNImputer
+from sklearn.tree import DecisionTreeRegressor, DecisionTreeClassifier
+from sklearn.ensemble import RandomForestRegressor,RandomForestClassifier
+from sklearn.neighbors import KNeighborsClassifier,KNeighborsRegressor
+
 
 # Define the cMSE evaluation function
 def cMSE(y_hat, y, c):
@@ -12,37 +18,28 @@ def cMSE(y_hat, y, c):
 # Load the training dataset
 df = pd.read_csv('train_data.csv', index_col=0)
 
-mean_GeneticRisk = df['GeneticRisk'].mean()
-print(mean_GeneticRisk)
-df['GeneticRisk'].fillna(mean_GeneticRisk,inplace=True)
+imputer_iterative = IterativeImputer()
+imputer_knn = KNNImputer()
 
-# Value is an integer so the mean doesn't work.
-mode_ComorbilityIndex = df['ComorbidityIndex'].mode()[0]
-print(mode_ComorbilityIndex)
-df['ComorbidityIndex'].fillna(mode_ComorbilityIndex,inplace=True)
+# Use IterativeImputer
+df_iterative = df.copy()
+df_iterative.iloc[:, :] = imputer_iterative.fit_transform(df)
 
-# We try with the mode and with a missing string, since it depends on each persons genetics
-mode_TreatmentResponse = df['TreatmentResponse'].mode()[0]
-print(mode_TreatmentResponse)
-df['TreatmentResponse'].fillna(mode_TreatmentResponse,inplace=True)
-
-#Check the mean of survival time when the value of the censored column is 0
-mean_SurvivalTime =  df[df['Censored']==0]['SurvivalTime'].mean()
-print(mean_SurvivalTime)
-df['SurvivalTime'].fillna(mean_SurvivalTime,inplace=True)
-
+# Use KNNImputer
+df_knn = df.copy()
+df_knn.iloc[:, :] = imputer_knn.fit_transform(df)
 # Handle missing values for features only
-features = df.drop(['SurvivalTime', 'Censored'], axis=1)
+features = df_iterative.iloc[:, :].drop(['SurvivalTime', 'Censored'], axis=1)
 
 # Split the data into features and target arrays
 X = features
-y = df['SurvivalTime']
+y = df_iterative.iloc[:, :]['SurvivalTime']
 
 # Filter out rows with NaN SurvivalTime for training
 train_indices = y.notna()
 X_train = X[train_indices]
 y_train = y[train_indices].values
-c_train = df.loc[train_indices, 'Censored'].values
+c_train = df_iterative.iloc[:, :].loc[train_indices, 'Censored'].values
 
 # Prepare the data for XGBoost
 X_train, X_val, y_train, y_val, c_train, c_val = train_test_split(X_train, y_train, c_train, test_size=0.7, random_state=42)
@@ -66,6 +63,7 @@ bst = xgb.train(params, dtrain, num_boost_round=999, evals=[(dval, "Val")], earl
 
 # Predict on validation set
 y_val_pred = bst.predict(dval)
+print(y_val_pred.shape)
 
 # Evaluate the model
 validation_cMSE = cMSE(y_val_pred, y_val, c_val)
