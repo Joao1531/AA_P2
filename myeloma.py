@@ -7,6 +7,9 @@ from sklearn.impute import IterativeImputer, KNNImputer
 from sklearn.tree import DecisionTreeRegressor, DecisionTreeClassifier
 from sklearn.ensemble import RandomForestRegressor,RandomForestClassifier
 from sklearn.neighbors import KNeighborsClassifier,KNeighborsRegressor
+from sklearn.metrics import mean_squared_error, r2_score
+
+
 
 
 # Define the cMSE evaluation function
@@ -19,30 +22,25 @@ def cMSE(y_hat, y, c):
 df = pd.read_csv('train_data.csv', index_col=0)
 
 imputer_iterative = IterativeImputer()
-imputer_knn = KNNImputer()
+imputer_knn = KNNImputer(n_neighbors=7)
 
 # Use IterativeImputer
 df_iterative = df.copy()
-df_iterative.iloc[:, :] = imputer_iterative.fit_transform(df)
+#df_iterative.iloc[:, :] = imputer_iterative.fit_transform(df)
 
 # Use KNNImputer
 df_knn = df.copy()
-df_knn.iloc[:, :] = imputer_knn.fit_transform(df)
+#df_knn.iloc[:, :] = imputer_knn.fit_transform(df)
 # Handle missing values for features only
-features = df_iterative.iloc[:, :].drop(['SurvivalTime', 'Censored'], axis=1)
+features = df_iterative.drop(['SurvivalTime', 'Censored'], axis=1)
 
 # Split the data into features and target arrays
 X = features
-y = df_iterative.iloc[:, :]['SurvivalTime']
-
-# Filter out rows with NaN SurvivalTime for training
-train_indices = y.notna()
-X_train = X[train_indices]
-y_train = y[train_indices].values
-c_train = df_iterative.iloc[:, :].loc[train_indices, 'Censored'].values
+y = df_iterative['SurvivalTime']
+c_train =df_iterative[ 'Censored']
 
 # Prepare the data for XGBoost
-X_train, X_val, y_train, y_val, c_train, c_val = train_test_split(X_train, y_train, c_train, test_size=0.7, random_state=42)
+X_train, X_val, y_train, y_val, c_train, c_val = train_test_split(X, y, c_train, test_size=0.2, random_state=42)
 
 # Convert the dataset to DMatrix
 dtrain = xgb.DMatrix(X_train, label=y_train)
@@ -58,14 +56,21 @@ params = {
     'objective':'reg:squarederror',
 }
 
+
+
+
 # Train the model
-bst = xgb.train(params, dtrain, num_boost_round=999, evals=[(dval, "Val")], early_stopping_rounds=5)
+bst = xgb.train(params,dtrain)
 
 # Predict on validation set
 y_val_pred = bst.predict(dval)
+print("Mse ",mean_squared_error(y_val_pred,y_val))
 print(y_val_pred.shape)
 
 # Evaluate the model
+print("y_pred len: ",len(y_val_pred))
+print("y_val len: ",len(y_val))
+print("c_val len: ",len(c_val))
 validation_cMSE = cMSE(y_val_pred, y_val, c_val)
 print(f'Validation cMSE: {validation_cMSE}')
 
